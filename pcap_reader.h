@@ -15,15 +15,20 @@ public:
 	void readInterface(const char * interface);
 	void readPcap(const char * name);
 	~Reader();
+	Reader();
 private:
 	void processEthernetPkt(pcap_pkthdr header, const u_char * packet);
-	void processIPv4Pkt(const u_char * packet, int remaining_len);
-	void processIPv6Pkt(const u_char * packet, int remaining_len);
-	void processTcpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, int tcp_tot_len);
-	void processUdpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, int udp_tot_len);
-	void addToConnections(string name, unsigned char * data, int length);
+	void processIPv4Pkt(const u_char * packet, unsigned int remaining_len);
+	void processIPv6Pkt(const u_char * packet, unsigned int remaining_len);
+	void processTcpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, uint tcp_tot_len);
+	void processUdpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, uint udp_tot_len);
+	void addToConnections(string name, unsigned char * data, uint length);
 	void analyzeConnection(string name);
+	void writePcap(string name);
 	map<string, Connection> connections;
+	Packet _packet;
+	pcap_t *pd;
+	pcap_dumper_t *pdumper;
 }; 
 
 #endif //__PCAP_READER_H

@@ -10,6 +10,7 @@
 #include <netinet/ether.h>
 #include <netinet/tcp.h>
 #include <netinet/udp.h>
+#include <ctime>
 
 #define SIZE_ETHERNET 14
 #define TCP_NUMBER (0x06)
@@ -20,6 +21,8 @@ void Reader::readInterface(const char * interface)
 	pcap_t *handle; 
 	char errbuf[PCAP_ERRBUF_SIZE];
 	handle = pcap_open_live(interface, BUFSIZ, 1, 1000, errbuf);
+	const u_char * packet;
+	struct pcap_pkthdr header;
 	if (handle == NULL )
 	{
 		fprintf(stderr, "Couldn't open interface %s\n", interface); 
@@ -27,10 +30,11 @@ void Reader::readInterface(const char * interface)
 	}
 	while (true)
 	{
-		pcap_pkthdr header;
-		const u_char * packet = pcap_next(handle, &header);
+		packet = pcap_next(handle, &header);
 		if (!packet)
 			continue;
+		_packet.packet = packet;
+		_packet.header = header;
 		if (pcap_datalink(handle) == DLT_EN10MB)
 		{
 			//fprintf(stdout, "Ethernet package received!\n");
@@ -41,13 +45,20 @@ void Reader::readInterface(const char * interface)
 	}
 }
 
+Reader::Reader()
+{
+	pd = pcap_open_dead(DLT_EN10MB, 65535);
+	pdumper = pcap_dump_open(pd, "shellcode_capture.pcap");
+}
+
 void Reader::readPcap(const char * name)
 {
 	connections.clear();
+	const u_char * packet;
+	struct pcap_pkthdr header;
+
 	pcap_t *handle; 
 	char errbuf[PCAP_ERRBUF_SIZE];
-	struct pcap_pkthdr header;
-	const u_char *packet;
 	handle = pcap_open_offline(name, errbuf);   //call pcap library function 
 	
 	if (handle == NULL)
@@ -56,8 +67,10 @@ void Reader::readPcap(const char * name)
 		return; 
 	}
 	while ((packet = pcap_next(handle, &header)) != NULL)
-	{ 
+	{
 		// header contains information about the packet (e.g. timestamp)
+		_packet.packet = packet;
+		_packet.header = header;
 		if( pcap_datalink(handle) == DLT_EN10MB )
 			processEthernetPkt(header, packet);
 	}
@@ -73,12 +86,14 @@ void Reader::readPcap(const char * name)
 Reader::~Reader()
 {
 	connections.clear();
+	pcap_close(pd);
+	pcap_dump_close(pdumper);
 }
 
 void Reader::processEthernetPkt(pcap_pkthdr header, const u_char * packet)
 {
-	int caplen = header.caplen; /* length of portion present from bpf */
-	int length = header.len; /* length of this packet off the wire */
+	unsigned int caplen = header.caplen; /* length of portion present from bpf */
+	unsigned int length = header.len; /* length of this packet off the wire */
 	if (caplen < length)
 		return;
 	if (caplen < SIZE_ETHERNET)
@@ -94,10 +109,10 @@ void Reader::processEthernetPkt(pcap_pkthdr header, const u_char * packet)
 		processIPv6Pkt(packet + sizeof(struct ether_header), caplen - sizeof(struct ether_header));
 }
 
-void Reader::processIPv4Pkt(const u_char * packet, int remaining_len)
+void Reader::processIPv4Pkt(const u_char * packet, unsigned int remaining_len)
 {
 	struct ip * hdr_ip = (struct ip *)(packet);
-	int size_ip = hdr_ip->ip_hl * 4;
+	unsigned int size_ip = hdr_ip->ip_hl * 4;
 	if (size_ip < 20 || size_ip > remaining_len)
 	{
 		fprintf(stderr, "Invalid IP header length: %d bytes, less than 20 bytes\n",size_ip);
@@ -113,12 +128,12 @@ void Reader::processIPv4Pkt(const u_char * packet, int remaining_len)
 				ntohs(hdr_ip->ip_len) - size_ip);
 }
 
-void Reader::processIPv6Pkt(const u_char * packet, int remaining_len)
+void Reader::processIPv6Pkt(const u_char * packet, unsigned int remaining_len)
 {
 	if ((int)(sizeof(struct ip6_hdr)) > remaining_len)
 		fprintf(stderr, "Invalid IPv6 packet\n");
 	struct ip6_hdr * hdr_ip6 = (struct ip6_hdr *)(packet);
-	int size_ip6 = sizeof(struct ip6_hdr);
+	unsigned int size_ip6 = sizeof(struct ip6_hdr);
 	char source_addr[INET6_ADDRSTRLEN], dest_addr[INET6_ADDRSTRLEN];
 	inet_ntop(AF_INET6, &(hdr_ip6->ip6_src), source_addr, sizeof(source_addr));
 	inet_ntop(AF_INET6, &(hdr_ip6->ip6_dst), dest_addr, sizeof(dest_addr));
@@ -128,30 +143,30 @@ void Reader::processIPv6Pkt(const u_char * packet, int remaining_len)
 		processUdpPkt(packet + size_ip6, source_addr, dest_addr, ntohs(hdr_ip6->ip6_plen));
 }
 
-void Reader::processTcpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, int tcp_tot_len)
+void Reader::processTcpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, unsigned int tcp_tot_len)
 {
-	if (tcp_tot_len < (int)(sizeof(struct tcphdr )))
+	if (tcp_tot_len < (uint)(sizeof(struct tcphdr )))
 	{
 		fprintf(stderr, "Invalid TCP packet\n");
 		return;
 	}
 	struct tcphdr * hdr_tcp = (struct tcphdr *)(packet);
-	int size_tcp = hdr_tcp->th_off * 4;
-	if (size_tcp < 20 )
+	unsigned int size_tcp = hdr_tcp->th_off * 4;
+	if (size_tcp < 20 || size_tcp > tcp_tot_len)
 	{
-		fprintf(stderr, "Invalid TCP header length\n");
+		fprintf(stderr, "Invalid TCP header length %u, total packet size %u\n", size_tcp, _packet.header.caplen);
 		return;
 	}
 
-	int tcp_source_p = ntohs(hdr_tcp->source);
-	int tcp_dest_p = ntohs(hdr_tcp->dest);
+	unsigned int tcp_source_p = ntohs(hdr_tcp->source);
+	unsigned int tcp_dest_p = ntohs(hdr_tcp->dest);
 			char s_port_buf[10], d_port_buf[10];
-	snprintf(s_port_buf, 10, "%d", tcp_source_p);
-	snprintf(d_port_buf, 10, "%d", tcp_dest_p);
-	string name = string(src_ip) + ":" + string(s_port_buf) + "->" +
+	snprintf(s_port_buf, 10, "%u", tcp_source_p);
+	snprintf(d_port_buf, 10, "%u", tcp_dest_p);
+	string name = "tcp " + string(src_ip) + ":" + string(s_port_buf) + " -> " +
 			string(dst_ip) + ":" + string(d_port_buf);
 
-	int size_payload = tcp_tot_len - size_tcp;
+	unsigned int size_payload = tcp_tot_len - size_tcp;
 	unsigned char * payload = (unsigned char *)(packet + size_tcp);
 
 	if (hdr_tcp->fin)
@@ -170,34 +185,36 @@ void Reader::processTcpPkt(const u_char * packet, const char * src_ip, const cha
 	}
 }
 
-void Reader::processUdpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, int udp_tot_len)
+void Reader::processUdpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, unsigned int udp_tot_len)
 {
-	if (udp_tot_len < (int)(sizeof(struct udphdr)))
+	if (udp_tot_len < (uint)(sizeof(struct udphdr)))
 	{
 		fprintf(stderr, "Invalid UDP packet\n");
 		return;
 	}
 	struct udphdr * hdr_udp = (struct udphdr *)(packet);
-	int size_udp = sizeof(udphdr);
-	int size_payload = udp_tot_len - size_udp;
+	unsigned int size_udp = sizeof(udphdr);
+	unsigned int size_payload = udp_tot_len - size_udp;
 	unsigned char * payload = (unsigned char *)(packet + size_udp);
 
-	int udp_source_p = ntohs(hdr_udp->source);
-	int udp_dest_p = ntohs(hdr_udp->dest);
+	unsigned int udp_source_p = ntohs(hdr_udp->source);
+	unsigned int udp_dest_p = ntohs(hdr_udp->dest);
 	char s_port_buf[10], d_port_buf[10];
-	snprintf(s_port_buf, 10, "%d", udp_source_p);
-	snprintf(d_port_buf, 10, "%d", udp_dest_p);
-	string name = string(src_ip) + ":" + string(s_port_buf) + "->" +
+	snprintf(s_port_buf, 10, "%u", udp_source_p);
+	snprintf(d_port_buf, 10, "%u", udp_dest_p);
+	string name = "udp " + string(src_ip) + ":" + string(s_port_buf) + " -> " +
 			string(dst_ip) + ":" + string(d_port_buf);
 	//fprintf(stderr, "Adding to connections udp connection %s of size %d\n", name.c_str(), size_payload);
 	addToConnections(name, payload, size_payload);
 }
 
-void Reader::addToConnections(string name, unsigned char * data, int length)
+void Reader::addToConnections(string name, unsigned char * data, unsigned int length)
 {
+	if (length == 0)
+		return;
 	if (connections.count(name) == 0)
 		connections.insert(pair<string, Connection>(name, Connection(name)));
-	connections[name].addData(data, length);
+	connections[name].addData(data, length, _packet);
 	if (connections[name].getBufferSize() >= BUFFER_ANALYZE)
 		analyzeConnection(name);
 }
@@ -205,14 +222,29 @@ void Reader::addToConnections(string name, unsigned char * data, int length)
 void Reader::analyzeConnection(string name)
 {
 	//fprintf(stderr, "In analyzing connection %s, size %d\n", name.c_str(), connections[name].getBufferSize());
-	int buffer_size = BUFFER_ANALYZE;
+	unsigned int buffer_size = BUFFER_ANALYZE;
 	if (connections[name].getBufferSize() < buffer_size)
 		buffer_size = connections[name].getBufferSize();
 	if (buffer_size == 0)
 		return;
-	unsigned char * buffer = connections[name].extractData();
+	unsigned char * buffer = connections[name].getBuffer();
 	//... analyze buffer of size buffer_size
-	Analyzer::analyze(buffer, buffer_size);
+	if (Analyzer::analyze(buffer, buffer_size))
+	{
+		string time = string(ctime(&_packet.header.ts.tv_sec));
+		time.erase(time.length() - 1);
+		fprintf(stdout, "[%s] %s: %s", time.c_str(), name.c_str(), Analyzer::getMessage().c_str());
+		writePcap(name);
+	}
 	//fprintf(stdout, "Analyzing Connection %s...\n", name.c_str());
-	delete [] buffer;
-} 
+	connections[name].extractData();
+}
+
+void Reader::writePcap(string name)
+{
+	vector<Packet> v = connections[name].getPackets();
+	for (auto it = v.begin(); it != v.end(); it++)
+	{
+		pcap_dump((u_char*)pdumper, &(it->header), it->packet);
+	}
+}

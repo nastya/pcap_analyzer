@@ -3,9 +3,10 @@
 #include <list>
 #include <string>
 
-FindDecryptor Analyzer::analyzer = FindDecryptor(); 
+FindDecryptor Analyzer::analyzer = FindDecryptor();
+string Analyzer::message = "";
 
-void Analyzer::analyze(unsigned char * buffer, int size)
+bool Analyzer::analyze(unsigned char * buffer, int size)
 {
 	/*fprintf(stdout, "Analyzing buffer of size %d...\n", size);
 	for (int i = 0; i < size; i++)
@@ -15,15 +16,23 @@ void Analyzer::analyze(unsigned char * buffer, int size)
 	int found = analyzer.find();
 	if (found)
 	{
-		fprintf(stdout, "Shellcode found!\n");
+		message = "Decryptor found!\n";
 		list <int> start_pos = analyzer.get_start_list();
 		for (list<int>::iterator it = start_pos.begin(); it != start_pos.end(); it++)
 		{
-			fprintf(stdout, "Decryption routine:\n");
-			fprintf(stdout, "%s\n", analyzer.get_decryptor(*it).c_str());
-			fprintf(stdout, "--------------------------------------------------------------\n");
+			message += "Decryption routine:\n";
+			message += analyzer.get_decryptor(*it);
+			message += "--------------------------------------------------------------\n";
 		}
+		return true;
 	}
+	message = "";
+	return false;
+}
+
+string Analyzer::getMessage()
+{
+	return message;
 }
 
  
