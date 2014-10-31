@@ -48,7 +48,12 @@ void Reader::readInterface(const char * interface)
 Reader::Reader()
 {
 	pd = pcap_open_dead(DLT_EN10MB, 65535);
-	pdumper = pcap_dump_open(pd, "shellcode_capture.pcap");
+	pdumper = pcap_dump_open(pd, Config::shellcode_pcap_file.c_str());
+	if (!pdumper)
+		fprintf(stderr, "Failed to open dump shellcode file\n");
+	logfile = fopen (Config::logfile.c_str(),"w");
+	if (!logfile)
+		fprintf(stderr, "Failed to open logfile\n");
 }
 
 void Reader::readPcap(const char * name)
@@ -88,6 +93,7 @@ Reader::~Reader()
 	connections.clear();
 	pcap_close(pd);
 	pcap_dump_close(pdumper);
+	fclose(logfile);
 }
 
 void Reader::processEthernetPkt(pcap_pkthdr header, const u_char * packet)
@@ -234,10 +240,11 @@ void Reader::analyzeConnection(string name)
 		string time = string(ctime(&_packet.header.ts.tv_sec));
 		time.erase(time.length() - 1);
 		fprintf(stdout, "[%s] %s: %s", time.c_str(), name.c_str(), Analyzer::getMessage().c_str());
+		fprintf(logfile, "[%s] %s: %s", time.c_str(), name.c_str(), Analyzer::getMessage().c_str());
 		writePcap(name);
 	}
 	//fprintf(stdout, "Analyzing Connection %s...\n", name.c_str());
-	connections[name].extractData();
+	connections[name].extractData(buffer_size);
 }
 
 void Reader::writePcap(string name)

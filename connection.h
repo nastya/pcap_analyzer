@@ -2,12 +2,13 @@
 #define __CONNECTION_H
 
 #include "packet.h"
+#include "config.h"
 
 #include <string>
 #include <map>
 #include <vector>
 
-#define BUFFER_ANALYZE 3000
+#define BUFFER_ANALYZE (Config::buffer_analyze)
 #define BUFFER_ALLOCATE (BUFFER_ANALYZE*2)
 
 using namespace std;
@@ -23,7 +24,7 @@ public:
 	unsigned int getBufferSize();
 	unsigned char * getBuffer();
 	vector<Packet> getPackets();
-	void extractData(unsigned int size = BUFFER_ANALYZE);
+	void extractData(unsigned int size);
 private:
 	string session_id;
 	unsigned char * buffer;

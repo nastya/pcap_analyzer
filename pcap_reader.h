@@ -29,6 +29,7 @@ private:
 	Packet _packet;
 	pcap_t *pd;
 	pcap_dumper_t *pdumper;
+	FILE * logfile;
 }; 
 
 #endif //__PCAP_READER_H
