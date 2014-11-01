@@ -124,29 +124,49 @@ void Reader::processIPv4Pkt(const u_char * packet, unsigned int remaining_len)
 		fprintf(stderr, "Invalid IP header length: %d bytes, less than 20 bytes\n",size_ip);
 		return;
 	}
+	if ((ntohs(hdr_ip->ip_off) & IP_OFFMASK) > 0 || (ntohs(hdr_ip->ip_off) & IP_MF) > 0)
+	{
+		// We don't reassemble fragmented packets yet
+		fprintf(stderr, "Fragmented packet ignored\n");
+		return;
+	}
+	unsigned int size_pkt = ntohs(hdr_ip->ip_len) - size_ip;
+	if (size_pkt > remaining_len - size_ip)
+	{
+		fprintf(stderr, "Invalid IPv4 packet?\n");
+		return;
+	}
 	//tcp packet has been received
 	if (hdr_ip->ip_p == TCP_NUMBER)
-		processTcpPkt(packet + size_ip, inet_ntoa(hdr_ip->ip_src), inet_ntoa(hdr_ip->ip_dst),
-				ntohs(hdr_ip->ip_len) - size_ip);
+		processTcpPkt(packet + size_ip, inet_ntoa(hdr_ip->ip_src), inet_ntoa(hdr_ip->ip_dst), size_pkt);
 	//udp packet
 	if(hdr_ip->ip_p == UDP_NUMBER)
-		processUdpPkt(packet + size_ip, inet_ntoa(hdr_ip->ip_src), inet_ntoa(hdr_ip->ip_dst),
-				ntohs(hdr_ip->ip_len) - size_ip);
+		processUdpPkt(packet + size_ip, inet_ntoa(hdr_ip->ip_src), inet_ntoa(hdr_ip->ip_dst), size_pkt);
 }
 
 void Reader::processIPv6Pkt(const u_char * packet, unsigned int remaining_len)
 {
 	if ((int)(sizeof(struct ip6_hdr)) > remaining_len)
+	{
 		fprintf(stderr, "Invalid IPv6 packet\n");
+		return;
+	}
 	struct ip6_hdr * hdr_ip6 = (struct ip6_hdr *)(packet);
 	unsigned int size_ip6 = sizeof(struct ip6_hdr);
 	char source_addr[INET6_ADDRSTRLEN], dest_addr[INET6_ADDRSTRLEN];
 	inet_ntop(AF_INET6, &(hdr_ip6->ip6_src), source_addr, sizeof(source_addr));
 	inet_ntop(AF_INET6, &(hdr_ip6->ip6_dst), dest_addr, sizeof(dest_addr));
+	unsigned int size_pkt = ntohs(hdr_ip6->ip6_plen);
+	// TODO: check for fragmented packets
+	if (size_pkt > remaining_len - size_ip6)
+	{
+		fprintf(stderr, "Invalid IPv6 packet?\n");
+		return;
+	}
 	if (hdr_ip6->ip6_nxt == TCP_NUMBER)
-		processTcpPkt(packet + size_ip6, source_addr, dest_addr, ntohs(hdr_ip6->ip6_plen));
+		processTcpPkt(packet + size_ip6, source_addr, dest_addr, size_pkt);
 	if (hdr_ip6->ip6_nxt == UDP_NUMBER)
-		processUdpPkt(packet + size_ip6, source_addr, dest_addr, ntohs(hdr_ip6->ip6_plen));
+		processUdpPkt(packet + size_ip6, source_addr, dest_addr, size_pkt);
 }
 
 void Reader::processTcpPkt(const u_char * packet, const char * src_ip, const char * dst_ip, unsigned int tcp_tot_len)

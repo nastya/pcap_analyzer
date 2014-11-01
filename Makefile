@@ -39,5 +39,6 @@ main.o: main.cpp pcap_reader.h config.h
 
 $(TARGET): pcap_reader.o analyzer.o connection.o main.o packet.o config.o
 	mkdir -p ../bin ../log
-	$(CXX) -o $@ pcap_reader.o analyzer.o connection.o main.o packet.o config.o -lpcap -lfinddecryptor $(FLAGS_LIB)
+	$(CXX) -o $@ pcap_reader.o analyzer.o connection.o main.o packet.o config.o \
+			-lpcap -lfinddecryptor -ldetectsimilar $(FLAGS_LIB)
 

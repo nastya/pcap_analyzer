@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "pcap_reader.h"
+#include "analyzer.h"
 
 static struct option long_options[] =
 {
@@ -14,13 +15,20 @@ static struct option long_options[] =
 	{"pcap", required_argument, 0, 'p'},
 	{"help", no_argument, 0, 'h'},
 	{"logfile", required_argument, 0, 'l'},
-	{"shellcodedump", required_argument, 0, 's'}
+	{"shellcodedump", required_argument, 0, 's'},
+	{"analyzer", required_argument, 0, 'a'},
+	{"type-analyzer", required_argument, 0, 't'},
+	{"model-shellcodes", required_argument, 0, 'm'}
 };
 
 void printHelp(const char * program_name)
 {
 	fprintf(stderr, "Usage: %s [ --pcap pcap_file | --directory directory_with_pcap_files | --interface interface_name]\n"
-				"\t\t[--logfile logfile] [--shellcodedump dumpfile]\n",
+				"\t\t[--logfile logfile] [--shellcodedump dumpfile] [--analyzer FindDecryptor | DetectSimilar]\n\n"
+			"If you use DetectSimilar analyzer, you can specify its type using\n"
+				"\t\t--type-analyzer Diff | Ngram | CFG | Trace\n"
+			"and it is necessary to specify directory with raw shellcode samples for it\n"
+				"\t\t--model-shellcodes shellcode_dir\n",
 		program_name);
 }
 
@@ -31,7 +39,7 @@ int main(int argc, char **argv)
 	int opt;
 	while (1) {
 		int option_index = 0;
-		opt = getopt_long(argc, argv, "d:i:p:hl:s:", long_options, &option_index);
+		opt = getopt_long(argc, argv, "d:i:p:hl:s:a:t:m:", long_options, &option_index);
 		if(opt == -1) break;
 		switch (opt)
 		{
@@ -56,6 +64,15 @@ int main(int argc, char **argv)
 			case 's':
 				Config::shellcode_pcap_file = optarg;
 				break;
+			case 'a':
+				Config::analyzer_name = optarg;
+				break;
+			case 't':
+				Config::analyzer_type = optarg;
+				break;
+			case 'm':
+				Config::shellcodes_dir = optarg;
+				break;
 			default:
 				printHelp(argv[0]);
 				exit(0);
@@ -63,6 +80,7 @@ int main(int argc, char **argv)
 	}
 
 	Reader r;
+	Analyzer::initAnalyzer();
 	if (type == "interface")
 	{
 		fprintf(stdout, "Analyzing traffic on interface %s...\n", name.c_str());
@@ -96,6 +114,7 @@ int main(int argc, char **argv)
 			exit(0);
 		}
 	}
+	Analyzer::freeAnalyzer();
 	if (type == "")
 		printHelp(argv[0]);
 	return 0;
